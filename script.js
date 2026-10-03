@@ -304,7 +304,29 @@ async function setView(view) {
         return;
     }
 
+
+    /*
+     * Every navigation gets a unique request number.
+     *
+     * If the user clicks rapidly:
+     *
+     * Dashboard → Rx → Dashboard → Rx
+     *
+     * older navigation operations become stale.
+     */
+    AppState.navigationRequestId =
+        (AppState.navigationRequestId || 0) + 1;
+
+    const navigationRequestId =
+        AppState.navigationRequestId;
+
+
     AppState.view = view;
+
+
+    /* ---------------------------------------------
+       Update UI immediately
+    --------------------------------------------- */
 
     $$(".view")
         .forEach(element => {
@@ -316,6 +338,7 @@ async function setView(view) {
 
         });
 
+
     $$(".nav-item")
         .forEach(item => {
 
@@ -326,8 +349,10 @@ async function setView(view) {
 
         });
 
+
     const breadcrumb =
         $("#breadcrumb");
+
 
     if (breadcrumb) {
 
@@ -336,34 +361,116 @@ async function setView(view) {
 
     }
 
+
     closeSidebar();
 
+
+    /*
+     * IMPORTANT:
+     *
+     * We do NOT wait for database loading before
+     * allowing the interface to change.
+     *
+     * Each loader is still awaited, but only the
+     * latest navigation is allowed to update the UI.
+     */
+
+
     if (view === "rx-library") {
+
         await loadSpecialties();
+
+        if (
+            navigationRequestId !==
+            AppState.navigationRequestId
+        ) {
+            return;
+        }
+
     }
+
 
     if (view === "admin-manager") {
+
         await loadAdminTree();
+
+        if (
+            navigationRequestId !==
+            AppState.navigationRequestId
+        ) {
+            return;
+        }
+
     }
+
 
     if (view === "drug-library") {
+
         await loadDrugLibrary();
+
+        if (
+            navigationRequestId !==
+            AppState.navigationRequestId
+        ) {
+            return;
+        }
+
     }
+
 
     if (view === "investigation-library") {
+
         await loadInvestigationLibrary();
+
+        if (
+            navigationRequestId !==
+            AppState.navigationRequestId
+        ) {
+            return;
+        }
+
     }
+
 
     if (view === "favorites") {
+
         await loadFavorites();
+
+        if (
+            navigationRequestId !==
+            AppState.navigationRequestId
+        ) {
+            return;
+        }
+
     }
+
 
     if (view === "recent") {
+
         await loadRecent();
+
+        if (
+            navigationRequestId !==
+            AppState.navigationRequestId
+        ) {
+            return;
+        }
+
     }
 
+
     if (view === "dashboard") {
+
         await loadDashboardStats();
+
+        if (
+            navigationRequestId !==
+            AppState.navigationRequestId
+        ) {
+            return;
+        }
+
     }
 
 }
@@ -2255,468 +2362,2464 @@ async function deleteDisease(id) {
 
 }
 
-
 /* =========================================================
    RX LIBRARY
+   FAST / CACHED / RACE-SAFE
 ========================================================= */
 
-async function loadSpecialties() {
+const RxLibraryState = {
+
+    screen: "specialties",
+
+    specialtyId: null,
+
+    systemId: null,
+
+    diseaseId: null,
+
+    requestId: 0,
+
+    loading: false,
+
+    cache: {
+
+        specialties: null,
+
+        specialtiesLoadedAt: 0,
+
+        systems: new Map(),
+
+        diseases: new Map(),
+
+        diseaseReaders: new Map()
+
+    }
+
+};
+
+
+function getRxLibraryContainer() {
+
+    const view =
+        document.getElementById(
+            "rx-libraryView"
+        );
+
+    if (!view) {
+        return null;
+    }
+
+    return view.querySelector(
+        "[data-rx-library-content]"
+    );
+
+}
+
+
+function nextRxRequest() {
+
+    RxLibraryState.requestId += 1;
+
+    return RxLibraryState.requestId;
+
+}
+
+
+function isCurrentRxRequest(requestId) {
+
+    return (
+        requestId ===
+        RxLibraryState.requestId
+    );
+
+}
+
+
+function showRxLoading(message) {
 
     const container =
-        $("#libraryContent");
+        getRxLibraryContainer();
 
-    container.innerHTML =
-        loadingBox(
-            "Loading specialties..."
+    if (!container) {
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="library-loading">
+            <span>${escapeHtml(message)}</span>
+        </div>
+    `;
+
+}
+
+
+function showRxError(title) {
+
+    const container =
+        getRxLibraryContainer();
+
+    if (!container) {
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="library-error">
+            <strong>${escapeHtml(title)}</strong>
+            <span>Please try again.</span>
+        </div>
+    `;
+
+}
+
+
+/* =========================================================
+   SPECIALTIES
+========================================================= */
+
+async function loadSpecialties(
+    forceRefresh = false
+) {
+
+    const container =
+        getRxLibraryContainer();
+
+    if (!container) {
+        return;
+    }
+
+    const requestId =
+        nextRxRequest();
+
+    RxLibraryState.screen =
+        "specialties";
+
+    RxLibraryState.specialtyId =
+        null;
+
+    RxLibraryState.systemId =
+        null;
+
+    RxLibraryState.diseaseId =
+        null;
+
+
+    /*
+     * Use cache when possible.
+     */
+
+    if (
+        !forceRefresh &&
+        Array.isArray(
+            RxLibraryState.cache.specialties
+        )
+    ) {
+
+        renderSpecialties(
+            RxLibraryState.cache.specialties
         );
+
+        return;
+
+    }
+
+
+    RxLibraryState.loading =
+        true;
+
+    showRxLoading(
+        "Loading specialties..."
+    );
 
 
     const {
         data,
         error
-    } =
-        await supabaseClient
-            .from("specialties")
-            .select(
-                "id,name,description,icon"
-            )
-            .eq(
-                "is_active",
-                true
-            )
-            .order(
-                "sort_order"
-            )
-            .order(
-                "name"
-            );
+    } = await supabaseClient
+        .from("specialties")
+        .select(
+            "id, name, description, icon, sort_order"
+        )
+        .eq(
+            "is_active",
+            true
+        )
+        .order(
+            "sort_order",
+            {
+                ascending: true
+            }
+        )
+        .order(
+            "name",
+            {
+                ascending: true
+            }
+        );
+
+
+    /*
+     * Ignore this request if the user
+     * has already navigated elsewhere.
+     */
+
+    if (
+        !isCurrentRxRequest(
+            requestId
+        )
+    ) {
+        return;
+    }
+
+
+    RxLibraryState.loading =
+        false;
 
 
     if (error) {
 
-        container.innerHTML =
-            errorBox(error.message);
+        console.error(
+            "Rx Master specialties could not be loaded:",
+            error
+        );
+
+        showRxError(
+            "Unable to load Rx Library."
+        );
 
         return;
 
     }
 
 
-    if (!data?.length) {
+    RxLibraryState.cache.specialties =
+        data || [];
 
-        container.innerHTML =
-            emptyBox(
-                "No specialties yet.",
-                "Your clinical library is ready for content."
-            );
+    RxLibraryState.cache.specialtiesLoadedAt =
+        Date.now();
+
+
+    renderSpecialties(
+        RxLibraryState.cache.specialties
+    );
+
+}
+
+
+function renderSpecialties(
+    specialties
+) {
+
+    const container =
+        getRxLibraryContainer();
+
+    if (!container) {
+        return;
+    }
+
+
+    if (
+        !specialties ||
+        specialties.length === 0
+    ) {
+
+        container.innerHTML = `
+            <div class="library-empty">
+                <strong>No specialties yet.</strong>
+                <span>
+                    Your Rx Library is ready for content.
+                </span>
+            </div>
+        `;
 
         return;
 
     }
 
 
-    container.innerHTML =
-        data
-            .map(
-                specialty => `
+    container.innerHTML = `
+
+        <div class="library-section-heading">
+
+            <div>
+
+                <span class="eyebrow">
+                    CLINICAL LIBRARY
+                </span>
+
+                <h2>
+                    Specialties
+                </h2>
+
+                <p>
+                    Choose a specialty to browse
+                    clinical systems and diseases.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div class="library-grid">
+
+            ${specialties
+                .map(
+                    specialty => `
 
                     <button
-                        class="library-card"
                         type="button"
-                        data-library-specialty="${specialty.id}"
+                        class="library-card"
+                        data-specialty-id="${escapeHtml(
+                            specialty.id
+                        )}"
                     >
 
                         <span class="library-card-icon">
-                            ✚
+
+                            <span class="medical-icon">
+                                ✚
+                            </span>
+
                         </span>
 
-                        <strong>
-                            ${escapeHtml(
-                                specialty.name
-                            )}
-                        </strong>
 
-                        <small>
-                            ${escapeHtml(
-                                specialty.description ||
-                                "Clinical specialty"
-                            )}
-                        </small>
+                        <span class="library-card-copy">
+
+                            <strong>
+                                ${escapeHtml(
+                                    specialty.name
+                                )}
+                            </strong>
+
+                            <span>
+                                ${escapeHtml(
+                                    specialty.description ||
+                                    "Clinical specialty"
+                                )}
+                            </span>
+
+                        </span>
+
+
+                        <span class="library-card-arrow">
+                            →
+                        </span>
 
                     </button>
 
                 `
-            )
-            .join("");
+                )
+                .join("")}
+
+        </div>
+
+    `;
 
 
-    $$("[data-library-specialty]")
-        .forEach(button => {
+    container
+        .querySelectorAll(
+            "[data-specialty-id]"
+        )
+        .forEach(
+            card => {
 
-            button.addEventListener(
-                "click",
-                () =>
-                    loadLibrarySystems(
-                        button.dataset.librarySpecialty
-                    )
-            );
+                card.addEventListener(
+                    "click",
+                    () => {
 
-        });
+                        const id =
+                            card.dataset.specialtyId;
+
+                        loadSystems(id);
+
+                    }
+                );
+
+            }
+        );
 
 }
 
 
-async function loadLibrarySystems(
-    specialtyId
+/* =========================================================
+   SYSTEMS
+========================================================= */
+
+async function loadSystems(
+    specialtyId,
+    forceRefresh = false
 ) {
 
     const container =
-        $("#libraryContent");
+        getRxLibraryContainer();
 
-    container.innerHTML =
-        loadingBox(
-            "Loading systems..."
+    if (
+        !container ||
+        !specialtyId
+    ) {
+        return;
+    }
+
+
+    /*
+     * Prevent clicking the exact same
+     * specialty repeatedly while it
+     * is already being displayed.
+     */
+
+    if (
+        RxLibraryState.loading &&
+        RxLibraryState.screen ===
+            "systems" &&
+        RxLibraryState.specialtyId ===
+            specialtyId
+    ) {
+        return;
+    }
+
+
+    const requestId =
+        nextRxRequest();
+
+
+    RxLibraryState.screen =
+        "systems";
+
+    RxLibraryState.specialtyId =
+        specialtyId;
+
+    RxLibraryState.systemId =
+        null;
+
+    RxLibraryState.diseaseId =
+        null;
+
+
+    const cached =
+        RxLibraryState.cache.systems.get(
+            specialtyId
         );
 
 
-    const [
-        specialtyResult,
-        systemsResult
-    ] = await Promise.all([
-
-        supabaseClient
-            .from("specialties")
-            .select(
-                "id,name,description"
-            )
-            .eq(
-                "id",
-                specialtyId
-            )
-            .maybeSingle(),
-
-        supabaseClient
-            .from("systems")
-            .select(
-                "id,name,description,icon"
-            )
-            .eq(
-                "specialty_id",
-                specialtyId
-            )
-            .eq(
-                "is_active",
-                true
-            )
-            .order(
-                "sort_order"
-            )
-            .order(
-                "name"
-            )
-
-    ]);
-
-
     if (
-        specialtyResult.error ||
-        systemsResult.error
+        !forceRefresh &&
+        cached
     ) {
 
-        container.innerHTML =
-            errorBox(
-                (
-                    specialtyResult.error ||
-                    systemsResult.error
-                ).message
-            );
+        renderSystems(
+            cached.specialty,
+            cached.systems
+        );
 
         return;
 
     }
 
 
-    const specialty =
-        specialtyResult.data;
+    /*
+     * We already know the specialty
+     * from the previous screen.
+     * Don't query it again.
+     */
 
-    const systems =
-        systemsResult.data || [];
+    let specialty =
+        (
+            RxLibraryState.cache
+                .specialties || []
+        ).find(
+            item =>
+                item.id ===
+                specialtyId
+        );
+
+
+    RxLibraryState.loading =
+        true;
+
+    showRxLoading(
+        "Loading systems..."
+    );
+
+
+    /*
+     * If the specialty is not in memory,
+     * retrieve it as a fallback.
+     */
+
+    if (!specialty) {
+
+        const {
+            data,
+            error
+        } = await supabaseClient
+            .from("specialties")
+            .select(
+                "id, name, description"
+            )
+            .eq(
+                "id",
+                specialtyId
+            )
+            .maybeSingle();
+
+
+        if (
+            !isCurrentRxRequest(
+                requestId
+            )
+        ) {
+            return;
+        }
+
+
+        if (
+            error ||
+            !data
+        ) {
+
+            RxLibraryState.loading =
+                false;
+
+            console.error(
+                "Rx Master specialty could not be loaded:",
+                error
+            );
+
+            showRxError(
+                "Unable to load specialty."
+            );
+
+            return;
+
+        }
+
+
+        specialty =
+            data;
+
+    }
+
+
+    const {
+        data: systems,
+        error
+    } = await supabaseClient
+        .from("systems")
+        .select(
+            "id, specialty_id, name, description, icon, sort_order"
+        )
+        .eq(
+            "specialty_id",
+            specialtyId
+        )
+        .eq(
+            "is_active",
+            true
+        )
+        .order(
+            "sort_order",
+            {
+                ascending: true
+            }
+        )
+        .order(
+            "name",
+            {
+                ascending: true
+            }
+        );
+
+
+    if (
+        !isCurrentRxRequest(
+            requestId
+        )
+    ) {
+        return;
+    }
+
+
+    RxLibraryState.loading =
+        false;
+
+
+    if (error) {
+
+        console.error(
+            "Rx Master systems could not be loaded:",
+            error
+        );
+
+        showRxError(
+            "Unable to load systems."
+        );
+
+        return;
+
+    }
+
+
+    RxLibraryState.cache.systems.set(
+        specialtyId,
+        {
+            specialty,
+            systems: systems || []
+        }
+    );
+
+
+    renderSystems(
+        specialty,
+        systems || []
+    );
+
+}
+
+
+function renderSystems(
+    specialty,
+    systems
+) {
+
+    const container =
+        getRxLibraryContainer();
+
+    if (!container) {
+        return;
+    }
 
 
     container.innerHTML = `
 
-        <button
-            class="secondary-button library-back"
-            id="libraryBack"
-            type="button"
-        >
-            ← Back to Specialties
-        </button>
+        <div class="library-toolbar">
 
-        <div class="page-heading">
+            <button
+                type="button"
+                class="library-back"
+                data-library-back
+            >
+                ←
+                <span>All Specialties</span>
+            </button>
+
+
+            <div class="library-location">
+
+                <span>
+                    Rx Library
+                </span>
+
+                <span>
+                    ›
+                </span>
+
+                <strong>
+                    ${escapeHtml(
+                        specialty.name
+                    )}
+                </strong>
+
+            </div>
+
+        </div>
+
+
+        <div class="library-section-heading">
+
             <div>
+
                 <span class="eyebrow">
                     SPECIALTY
                 </span>
 
-                <h1>
+                <h2>
                     ${escapeHtml(
-                        specialty?.name || ""
+                        specialty.name
                     )}
-                </h1>
+                </h2>
 
                 <p>
                     ${escapeHtml(
-                        specialty?.description || ""
+                        specialty.description ||
+                        "Select a clinical system."
                     )}
                 </p>
+
             </div>
-        </div>
-
-        <div class="card-grid">
-
-            ${
-                systems.length
-                    ? systems.map(
-                        system => `
-
-                            <button
-                                class="library-card"
-                                type="button"
-                                data-library-system="${system.id}"
-                            >
-
-                                <span class="library-card-icon">
-                                    ◈
-                                </span>
-
-                                <strong>
-                                    ${escapeHtml(
-                                        system.name
-                                    )}
-                                </strong>
-
-                                <small>
-                                    ${escapeHtml(
-                                        system.description ||
-                                        ""
-                                    )}
-                                </small>
-
-                            </button>
-
-                        `
-                    ).join("")
-                    : emptyBox(
-                        "No systems yet.",
-                        "This specialty has no published systems."
-                    )
-            }
 
         </div>
+
+
+        ${
+            systems.length
+
+                ? `
+
+                    <div class="library-grid">
+
+                        ${systems
+                            .map(
+                                system => `
+
+                                <button
+                                    type="button"
+                                    class="library-card"
+                                    data-system-id="${escapeHtml(
+                                        system.id
+                                    )}"
+                                >
+
+                                    <span class="library-card-icon">
+
+                                        <span class="medical-icon">
+                                            ✚
+                                        </span>
+
+                                    </span>
+
+
+                                    <span class="library-card-copy">
+
+                                        <strong>
+                                            ${escapeHtml(
+                                                system.name
+                                            )}
+                                        </strong>
+
+                                        <span>
+                                            ${escapeHtml(
+                                                system.description ||
+                                                "Clinical system"
+                                            )}
+                                        </span>
+
+                                    </span>
+
+
+                                    <span class="library-card-arrow">
+                                        →
+                                    </span>
+
+                                </button>
+
+                            `
+                            )
+                            .join("")}
+
+                    </div>
+
+                `
+
+                : `
+
+                    <div class="library-empty">
+
+                        <strong>
+                            No systems yet.
+                        </strong>
+
+                        <span>
+                            This specialty does not contain
+                            any systems yet.
+                        </span>
+
+                    </div>
+
+                `
+        }
 
     `;
 
 
-    $("#libraryBack")
+    container
+        .querySelector(
+            "[data-library-back]"
+        )
         ?.addEventListener(
             "click",
-            loadSpecialties
+            () => loadSpecialties()
         );
 
 
-    $$("[data-library-system]")
-        .forEach(button => {
+    container
+        .querySelectorAll(
+            "[data-system-id]"
+        )
+        .forEach(
+            card => {
 
-            button.addEventListener(
-                "click",
-                () =>
-                    loadLibraryDiseases(
-                        button.dataset.librarySystem
-                    )
-            );
+                card.addEventListener(
+                    "click",
+                    () => {
 
-        });
+                        loadDiseases(
+                            card.dataset.systemId
+                        );
+
+                    }
+                );
+
+            }
+        );
 
 }
 
 
-async function loadLibraryDiseases(
-    systemId
+/* =========================================================
+   DISEASES
+========================================================= */
+
+async function loadDiseases(
+    systemId,
+    forceRefresh = false
 ) {
 
     const container =
-        $("#libraryContent");
+        getRxLibraryContainer();
 
-    container.innerHTML =
-        loadingBox(
-            "Loading diseases..."
-        );
-
-
-    const [
-        systemResult,
-        diseasesResult
-    ] = await Promise.all([
-
-        supabaseClient
-            .from("systems")
-            .select(
-                "id,name,description,specialty_id"
-            )
-            .eq(
-                "id",
-                systemId
-            )
-            .maybeSingle(),
-
-        supabaseClient
-            .from("diseases")
-            .select(
-                "id,name,short_description,slug"
-            )
-            .eq(
-                "system_id",
-                systemId
-            )
-            .eq(
-                "is_published",
-                true
-            )
-            .order(
-                "sort_order"
-            )
-            .order(
-                "name"
-            )
-
-    ]);
+    if (
+        !container ||
+        !systemId
+    ) {
+        return;
+    }
 
 
     if (
-        systemResult.error ||
-        diseasesResult.error
+        RxLibraryState.loading &&
+        RxLibraryState.screen ===
+            "diseases" &&
+        RxLibraryState.systemId ===
+            systemId
+    ) {
+        return;
+    }
+
+
+    const requestId =
+        nextRxRequest();
+
+
+    RxLibraryState.screen =
+        "diseases";
+
+    RxLibraryState.systemId =
+        systemId;
+
+    RxLibraryState.diseaseId =
+        null;
+
+
+    const cached =
+        RxLibraryState.cache.diseases.get(
+            systemId
+        );
+
+
+    if (
+        !forceRefresh &&
+        cached
     ) {
 
-        container.innerHTML =
-            errorBox(
-                (
-                    systemResult.error ||
-                    diseasesResult.error
-                ).message
-            );
+        renderDiseases(
+            cached.system,
+            cached.diseases
+        );
 
         return;
 
     }
 
 
-    const system =
-        systemResult.data;
+    let system =
+        null;
 
-    const diseases =
-        diseasesResult.data || [];
+
+    /*
+     * We already know the system from
+     * the previous screen.
+     */
+
+    const cachedSystems =
+        RxLibraryState.cache.systems;
+
+
+    for (
+        const entry of cachedSystems.values()
+    ) {
+
+        const match =
+            entry.systems?.find(
+                item =>
+                    item.id ===
+                    systemId
+            );
+
+        if (match) {
+
+            system =
+                match;
+
+            break;
+
+        }
+
+    }
+
+
+    RxLibraryState.loading =
+        true;
+
+    showRxLoading(
+        "Loading diseases..."
+    );
+
+
+    /*
+     * Fallback only if system isn't cached.
+     */
+
+    if (!system) {
+
+        const {
+            data,
+            error
+        } = await supabaseClient
+            .from("systems")
+            .select(
+                "id, specialty_id, name, description"
+            )
+            .eq(
+                "id",
+                systemId
+            )
+            .maybeSingle();
+
+
+        if (
+            !isCurrentRxRequest(
+                requestId
+            )
+        ) {
+            return;
+        }
+
+
+        if (
+            error ||
+            !data
+        ) {
+
+            RxLibraryState.loading =
+                false;
+
+            console.error(
+                "Rx Master system could not be loaded:",
+                error
+            );
+
+            showRxError(
+                "Unable to load system."
+            );
+
+            return;
+
+        }
+
+
+        system =
+            data;
+
+    }
+
+
+    const {
+        data: diseases,
+        error
+    } = await supabaseClient
+        .from("diseases")
+        .select(
+            "id, system_id, name, slug, short_description, icon, sort_order"
+        )
+        .eq(
+            "system_id",
+            systemId
+        )
+        .eq(
+            "is_published",
+            true
+        )
+        .order(
+            "sort_order",
+            {
+                ascending: true
+            }
+        )
+        .order(
+            "name",
+            {
+                ascending: true
+            }
+        );
+
+
+    if (
+        !isCurrentRxRequest(
+            requestId
+        )
+    ) {
+        return;
+    }
+
+
+    RxLibraryState.loading =
+        false;
+
+
+    if (error) {
+
+        console.error(
+            "Rx Master diseases could not be loaded:",
+            error
+        );
+
+        showRxError(
+            "Unable to load diseases."
+        );
+
+        return;
+
+    }
+
+
+    RxLibraryState.cache.diseases.set(
+        systemId,
+        {
+            system,
+            diseases: diseases || []
+        }
+    );
+
+
+    renderDiseases(
+        system,
+        diseases || []
+    );
+
+}
+
+
+function renderDiseases(
+    system,
+    diseases
+) {
+
+    const container =
+        getRxLibraryContainer();
+
+    if (!container) {
+        return;
+    }
 
 
     container.innerHTML = `
 
-        <button
-            class="secondary-button library-back"
-            id="libraryBack"
-            type="button"
-        >
-            ← Back to Systems
-        </button>
+        <div class="library-toolbar">
 
-        <div class="page-heading">
+            <button
+                type="button"
+                class="library-back"
+                data-library-back
+            >
+                ←
+                <span>
+                    Back to ${escapeHtml(
+                        system.name
+                    )}
+                </span>
+            </button>
 
-            <div>
-                <span class="eyebrow">
-                    SYSTEM
+
+            <div class="library-location">
+
+                <span>
+                    Rx Library
                 </span>
 
-                <h1>
-                    ${escapeHtml(
-                        system?.name || ""
-                    )}
-                </h1>
+                <span>
+                    ›
+                </span>
 
-                <p>
+                <strong>
                     ${escapeHtml(
-                        system?.description || ""
+                        system.name
                     )}
-                </p>
+                </strong>
+
             </div>
 
         </div>
 
-        <div class="card-grid">
 
-            ${
-                diseases.length
-                    ? diseases.map(
-                        disease => `
+        <div class="library-section-heading">
 
-                            <button
-                                class="library-card"
-                                type="button"
-                                data-library-disease="${disease.id}"
-                            >
+            <div>
 
-                                <span class="library-card-icon">
-                                    ✚
-                                </span>
+                <span class="eyebrow">
+                    SYSTEM
+                </span>
 
-                                <strong>
-                                    ${escapeHtml(
-                                        disease.name
-                                    )}
-                                </strong>
+                <h2>
+                    ${escapeHtml(
+                        system.name
+                    )}
+                </h2>
 
-                                <small>
-                                    ${escapeHtml(
-                                        disease.short_description ||
-                                        "Clinical reference"
-                                    )}
-                                </small>
+                <p>
+                    ${escapeHtml(
+                        system.description ||
+                        "Select a disease."
+                    )}
+                </p>
 
-                            </button>
-
-                        `
-                    ).join("")
-                    : emptyBox(
-                        "No published diseases.",
-                        "Published diseases will appear here."
-                    )
-            }
+            </div>
 
         </div>
+
+
+        ${
+            diseases.length
+
+                ? `
+
+                    <div class="library-grid">
+
+                        ${diseases
+                            .map(
+                                disease => `
+
+                                <button
+                                    type="button"
+                                    class="library-card disease-card"
+                                    data-disease-id="${escapeHtml(
+                                        disease.id
+                                    )}"
+                                >
+
+                                    <span class="library-card-icon">
+
+                                        <span class="medical-icon">
+                                            ◉
+                                        </span>
+
+                                    </span>
+
+
+                                    <span class="library-card-copy">
+
+                                        <strong>
+                                            ${escapeHtml(
+                                                disease.name
+                                            )}
+                                        </strong>
+
+                                        <span>
+                                            ${escapeHtml(
+                                                disease.short_description ||
+                                                "Clinical reference"
+                                            )}
+                                        </span>
+
+                                    </span>
+
+
+                                    <span class="library-card-arrow">
+                                        →
+                                    </span>
+
+                                </button>
+
+                            `
+                            )
+                            .join("")}
+
+                    </div>
+
+                `
+
+                : `
+
+                    <div class="library-empty">
+
+                        <strong>
+                            No published diseases yet.
+                        </strong>
+
+                        <span>
+                            Diseases will appear here after
+                            they are published.
+                        </span>
+
+                    </div>
+
+                `
+        }
 
     `;
 
 
-    $("#libraryBack")
+    container
+        .querySelector(
+            "[data-library-back]"
+        )
         ?.addEventListener(
             "click",
             () =>
-                loadLibrarySystems(
+                loadSystems(
                     system.specialty_id
                 )
         );
 
 
-    $$("[data-library-disease]")
-        .forEach(button => {
+    container
+        .querySelectorAll(
+            "[data-disease-id]"
+        )
+        .forEach(
+            card => {
 
-            button.addEventListener(
-                "click",
-                () =>
-                    openDiseaseReader(
-                        button.dataset.libraryDisease
+                card.addEventListener(
+                    "click",
+                    () => {
+
+                        openDiseaseReader(
+                            card.dataset.diseaseId
+                        );
+
+                    }
+                );
+
+            }
+        );
+
+}
+
+
+/* =========================================================
+   DISEASE READER
+========================================================= */
+
+async function openDiseaseReader(
+    diseaseId
+) {
+
+    const container =
+        getRxLibraryContainer();
+
+    if (
+        !container ||
+        !diseaseId
+    ) {
+        return;
+    }
+
+
+    /*
+     * Prevent repeated clicks on the
+     * same disease from launching
+     * multiple expensive reader loads.
+     */
+
+    if (
+        RxLibraryState.loading &&
+        RxLibraryState.screen ===
+            "reader" &&
+        RxLibraryState.diseaseId ===
+            diseaseId
+    ) {
+        return;
+    }
+
+
+    const requestId =
+        nextRxRequest();
+
+
+    RxLibraryState.screen =
+        "reader";
+
+    RxLibraryState.diseaseId =
+        diseaseId;
+
+
+    const cached =
+        RxLibraryState.cache.diseaseReaders.get(
+            diseaseId
+        );
+
+
+    if (cached) {
+
+        renderDiseaseReader(
+            cached.disease,
+            cached.clinicalFeatures,
+            cached.investigations,
+            cached.treatments,
+            cached.advice,
+            cached.followups
+        );
+
+        /*
+         * Recent-view recording is deliberately
+         * non-blocking.
+         */
+
+        void recordRecentDiseaseView(
+            diseaseId
+        );
+
+        return;
+
+    }
+
+
+    RxLibraryState.loading =
+        true;
+
+    showRxLoading(
+        "Loading clinical reference..."
+    );
+
+
+    const {
+        data: disease,
+        error
+    } = await supabaseClient
+        .from("diseases")
+        .select(`
+            id,
+            system_id,
+            name,
+            slug,
+            short_description
+        `)
+        .eq(
+            "id",
+            diseaseId
+        )
+        .maybeSingle();
+
+
+    if (
+        !isCurrentRxRequest(
+            requestId
+        )
+    ) {
+        return;
+    }
+
+
+    if (
+        error ||
+        !disease
+    ) {
+
+        RxLibraryState.loading =
+            false;
+
+        console.error(
+            "Rx Master disease could not be loaded:",
+            error
+        );
+
+        showRxError(
+            "Unable to load clinical reference."
+        );
+
+        return;
+
+    }
+
+
+    /*
+     * These five queries are still parallel,
+     * but now stale requests are prevented
+     * from touching the UI.
+     */
+
+    const [
+        clinicalFeaturesResult,
+        investigationsResult,
+        treatmentResult,
+        adviceResult,
+        followupsResult
+    ] = await Promise.all([
+
+        supabaseClient
+            .from("clinical_features")
+            .select(`
+                id,
+                feature,
+                sort_order
+            `)
+            .eq(
+                "disease_id",
+                diseaseId
+            )
+            .order(
+                "sort_order",
+                {
+                    ascending: true
+                }
+            ),
+
+        supabaseClient
+            .from("disease_investigations")
+            .select(`
+                id,
+                investigation_id,
+                sort_order,
+                investigations (
+                    id,
+                    name,
+                    description
+                )
+            `)
+            .eq(
+                "disease_id",
+                diseaseId
+            )
+            .order(
+                "sort_order",
+                {
+                    ascending: true
+                }
+            ),
+
+        supabaseClient
+            .from("disease_treatments")
+            .select(`
+                id,
+                title,
+                notes,
+                sort_order,
+                treatment_items (
+                    id,
+                    drug_id,
+                    dose,
+                    route,
+                    frequency,
+                    duration,
+                    instructions,
+                    sort_order,
+                    drugs (
+                        id,
+                        name,
+                        generic_name
                     )
+                )
+            `)
+            .eq(
+                "disease_id",
+                diseaseId
+            )
+            .order(
+                "sort_order",
+                {
+                    ascending: true
+                }
+            ),
+
+        supabaseClient
+            .from("advice")
+            .select(`
+                id,
+                advice,
+                sort_order
+            `)
+            .eq(
+                "disease_id",
+                diseaseId
+            )
+            .order(
+                "sort_order",
+                {
+                    ascending: true
+                }
+            ),
+
+        supabaseClient
+            .from("followups")
+            .select(`
+                id,
+                followup,
+                sort_order
+            `)
+            .eq(
+                "disease_id",
+                diseaseId
+            )
+            .order(
+                "sort_order",
+                {
+                    ascending: true
+                }
+            )
+
+    ]);
+
+
+    if (
+        !isCurrentRxRequest(
+            requestId
+        )
+    ) {
+        return;
+    }
+
+
+    const queryResults = [
+        clinicalFeaturesResult,
+        investigationsResult,
+        treatmentResult,
+        adviceResult,
+        followupsResult
+    ];
+
+
+    const failedQuery =
+        queryResults.find(
+            result =>
+                result.error
+        );
+
+
+    if (failedQuery) {
+
+        RxLibraryState.loading =
+            false;
+
+        console.error(
+            "Rx Master clinical content loading failed:",
+            failedQuery.error
+        );
+
+        showRxError(
+            "Some clinical content could not be loaded."
+        );
+
+        return;
+
+    }
+
+
+    const clinicalFeatures =
+        clinicalFeaturesResult.data || [];
+
+    const investigations =
+        investigationsResult.data || [];
+
+    const treatments =
+        treatmentResult.data || [];
+
+    const advice =
+        adviceResult.data || [];
+
+    const followups =
+        followupsResult.data || [];
+
+
+    RxLibraryState.loading =
+        false;
+
+
+    /*
+     * Cache the complete reader.
+     */
+
+    RxLibraryState.cache.diseaseReaders.set(
+        diseaseId,
+        {
+            disease,
+            clinicalFeatures,
+            investigations,
+            treatments,
+            advice,
+            followups
+        }
+    );
+
+
+    renderDiseaseReader(
+        disease,
+        clinicalFeatures,
+        investigations,
+        treatments,
+        advice,
+        followups
+    );
+
+
+    /*
+     * Do not make the user wait for
+     * recent-view tracking.
+     */
+
+    void recordRecentDiseaseView(
+        diseaseId
+    );
+
+}
+
+
+/* =========================================================
+   DISEASE READER RENDER
+========================================================= */
+
+function renderDiseaseReader(
+    disease,
+    clinicalFeatures,
+    investigations,
+    treatments,
+    advice,
+    followups
+) {
+
+    const container =
+        getRxLibraryContainer();
+
+    if (!container) {
+        return;
+    }
+
+
+    container.innerHTML = `
+
+        <article class="clinical-reader">
+
+
+            <div class="reader-toolbar">
+
+                <button
+                    type="button"
+                    class="library-back"
+                    data-reader-back
+                >
+                    ←
+                    <span>
+                        Back to Diseases
+                    </span>
+                </button>
+
+
+                <div class="reader-actions">
+
+                    <button
+                        type="button"
+                        class="reader-action"
+                        data-reader-favorite
+                        title="Add to favorites"
+                        data-favorite-disease="${escapeHtml(
+                            disease.id
+                        )}"
+                    >
+                        ☆
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="reader-action"
+                        data-reader-print
+                        title="Print"
+                    >
+                        ⎙
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <div class="reader-breadcrumb">
+
+                <span>
+                    Rx Library
+                </span>
+
+                <span>
+                    ›
+                </span>
+
+                <strong>
+                    ${escapeHtml(
+                        disease.name
+                    )}
+                </strong>
+
+            </div>
+
+
+            <header class="reader-header">
+
+                <span class="eyebrow">
+                    CLINICAL REFERENCE
+                </span>
+
+                <h1>
+                    ${escapeHtml(
+                        disease.name
+                    )}
+                </h1>
+
+                <p>
+                    ${escapeHtml(
+                        disease.short_description ||
+                        ""
+                    )}
+                </p>
+
+            </header>
+
+
+            <nav
+                class="reader-section-nav"
+                aria-label="Clinical sections"
+            >
+
+                <a href="#reader-overview">
+                    Overview
+                </a>
+
+                <a href="#reader-features">
+                    Features
+                </a>
+
+                <a href="#reader-investigations">
+                    Investigations
+                </a>
+
+                <a href="#reader-treatment">
+                    Treatment
+                </a>
+
+                <a href="#reader-advice">
+                    Advice
+                </a>
+
+                <a href="#reader-followup">
+                    Follow-up
+                </a>
+
+            </nav>
+
+
+            <section
+                class="reader-section"
+                id="reader-overview"
+            >
+
+                <div class="reader-section-heading">
+
+                    <span class="section-number">
+                        01
+                    </span>
+
+                    <div>
+
+                        <span class="eyebrow">
+                            OVERVIEW
+                        </span>
+
+                        <h2>
+                            Brief Discussion
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                <div class="reader-content">
+
+                    <p>
+                        ${escapeHtml(
+                            disease.short_description ||
+                            "No brief discussion has been added yet."
+                        )}
+                    </p>
+
+                </div>
+
+            </section>
+
+
+            <section
+                class="reader-section"
+                id="reader-features"
+            >
+
+                <div class="reader-section-heading">
+
+                    <span class="section-number">
+                        02
+                    </span>
+
+                    <div>
+
+                        <span class="eyebrow">
+                            PRESENTATION
+                        </span>
+
+                        <h2>
+                            Clinical Features
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                ${
+                    clinicalFeatures.length
+
+                        ? `
+
+                            <ul class="clinical-list">
+
+                                ${clinicalFeatures
+                                    .map(
+                                        item => `
+                                            <li>
+                                                ${escapeHtml(
+                                                    item.feature
+                                                )}
+                                            </li>
+                                        `
+                                    )
+                                    .join("")}
+
+                            </ul>
+
+                        `
+
+                        : `
+
+                            <div class="reader-empty">
+                                No clinical features have
+                                been added yet.
+                            </div>
+
+                        `
+                }
+
+            </section>
+
+
+            <section
+                class="reader-section"
+                id="reader-investigations"
+            >
+
+                <div class="reader-section-heading">
+
+                    <span class="section-number">
+                        03
+                    </span>
+
+                    <div>
+
+                        <span class="eyebrow">
+                            DIAGNOSTICS
+                        </span>
+
+                        <h2>
+                            Investigations
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                ${
+                    investigations.length
+
+                        ? `
+
+                            <div class="reader-investigation-list">
+
+                                ${investigations
+                                    .map(
+                                        item => {
+
+                                            const investigation =
+                                                item.investigations;
+
+                                            if (
+                                                !investigation
+                                            ) {
+                                                return "";
+                                            }
+
+                                            return `
+
+                                                <article
+                                                    class="reader-item"
+                                                >
+
+                                                    <strong>
+                                                        ${escapeHtml(
+                                                            investigation.name
+                                                        )}
+                                                    </strong>
+
+                                                    <span>
+                                                        ${escapeHtml(
+                                                            investigation.description ||
+                                                            ""
+                                                        )}
+                                                    </span>
+
+                                                </article>
+
+                                            `;
+
+                                        }
+                                    )
+                                    .join("")}
+
+                            </div>
+
+                        `
+
+                        : `
+
+                            <div class="reader-empty">
+                                No investigations have
+                                been added yet.
+                            </div>
+
+                        `
+                }
+
+            </section>
+
+
+            <section
+                class="reader-section"
+                id="reader-treatment"
+            >
+
+                <div class="reader-section-heading">
+
+                    <span class="section-number">
+                        04
+                    </span>
+
+                    <div>
+
+                        <span class="eyebrow">
+                            MANAGEMENT
+                        </span>
+
+                        <h2>
+                            Treatment
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                ${
+                    treatments.length
+
+                        ? `
+
+                            <div class="reader-treatment-list">
+
+                                ${treatments
+                                    .map(
+                                        treatment => `
+
+                                            <article
+                                                class="reader-treatment"
+                                            >
+
+                                                <div>
+
+                                                    <h3>
+                                                        ${escapeHtml(
+                                                            treatment.title ||
+                                                            "Treatment"
+                                                        )}
+                                                    </h3>
+
+                                                    ${
+                                                        treatment.notes
+                                                            ? `
+                                                                <p>
+                                                                    ${escapeHtml(
+                                                                        treatment.notes
+                                                                    )}
+                                                                </p>
+                                                            `
+                                                            : ""
+                                                    }
+
+                                                </div>
+
+
+                                                ${
+                                                    treatment.treatment_items?.length
+
+                                                        ? `
+
+                                                            <div class="reader-treatment-items">
+
+                                                                ${treatment.treatment_items
+                                                                    .map(
+                                                                        item => {
+
+                                                                            const drug =
+                                                                                item.drugs;
+
+                                                                            return `
+
+                                                                                <div
+                                                                                    class="reader-treatment-item"
+                                                                                >
+
+                                                                                    <strong>
+                                                                                        ${escapeHtml(
+                                                                                            drug?.name ||
+                                                                                            drug?.generic_name ||
+                                                                                            "Medication"
+                                                                                        )}
+                                                                                    </strong>
+
+                                                                                    <span>
+                                                                                        ${escapeHtml(
+                                                                                            [
+                                                                                                item.dose,
+                                                                                                item.route,
+                                                                                                item.frequency,
+                                                                                                item.duration
+                                                                                            ]
+                                                                                                .filter(
+                                                                                                    Boolean
+                                                                                                )
+                                                                                                .join(
+                                                                                                    " · "
+                                                                                                )
+                                                                                        )}
+                                                                                    </span>
+
+                                                                                    ${
+                                                                                        item.instructions
+                                                                                            ? `
+                                                                                                <small>
+                                                                                                    ${escapeHtml(
+                                                                                                        item.instructions
+                                                                                                    )}
+                                                                                                </small>
+                                                                                            `
+                                                                                            : ""
+                                                                                    }
+
+                                                                                </div>
+
+                                                                            `;
+
+                                                                        }
+                                                                    )
+                                                                    .join("")}
+
+                                                            </div>
+
+                                                        `
+
+                                                        : ""
+                                                }
+
+                                            </article>
+
+                                        `
+                                    )
+                                    .join("")}
+
+                            </div>
+
+                        `
+
+                        : `
+
+                            <div class="reader-empty">
+                                No treatment information
+                                has been added yet.
+                            </div>
+
+                        `
+                }
+
+            </section>
+
+
+            <section
+                class="reader-section"
+                id="reader-advice"
+            >
+
+                <div class="reader-section-heading">
+
+                    <span class="section-number">
+                        05
+                    </span>
+
+                    <div>
+
+                        <span class="eyebrow">
+                            PATIENT CARE
+                        </span>
+
+                        <h2>
+                            Advice
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                ${
+                    advice.length
+
+                        ? `
+
+                            <ul class="clinical-list">
+
+                                ${advice
+                                    .map(
+                                        item => `
+                                            <li>
+                                                ${escapeHtml(
+                                                    item.advice
+                                                )}
+                                            </li>
+                                        `
+                                    )
+                                    .join("")}
+
+                            </ul>
+
+                        `
+
+                        : `
+
+                            <div class="reader-empty">
+                                No advice has been added yet.
+                            </div>
+
+                        `
+                }
+
+            </section>
+
+
+            <section
+                class="reader-section"
+                id="reader-followup"
+            >
+
+                <div class="reader-section-heading">
+
+                    <span class="section-number">
+                        06
+                    </span>
+
+                    <div>
+
+                        <span class="eyebrow">
+                            CONTINUITY
+                        </span>
+
+                        <h2>
+                            Follow-up
+                        </h2>
+
+                    </div>
+
+                </div>
+
+
+                ${
+                    followups.length
+
+                        ? `
+
+                            <ul class="clinical-list">
+
+                                ${followups
+                                    .map(
+                                        item => `
+                                            <li>
+                                                ${escapeHtml(
+                                                    item.followup
+                                                )}
+                                            </li>
+                                        `
+                                    )
+                                    .join("")}
+
+                            </ul>
+
+                        `
+
+                        : `
+
+                            <div class="reader-empty">
+                                No follow-up information
+                                has been added yet.
+                            </div>
+
+                        `
+                }
+
+            </section>
+
+
+        </article>
+
+    `;
+
+
+    container
+        .querySelector(
+            "[data-reader-back]"
+        )
+        ?.addEventListener(
+            "click",
+            () =>
+                loadDiseases(
+                    disease.system_id
+                )
+        );
+
+
+    container
+        .querySelector(
+            "[data-reader-print]"
+        )
+        ?.addEventListener(
+            "click",
+            () =>
+                window.print()
+        );
+
+
+    container
+        .querySelector(
+            "[data-reader-favorite]"
+        )
+        ?.addEventListener(
+            "click",
+            () =>
+                toggleDiseaseFavorite(
+                    disease.id
+                )
+        );
+
+}
+
+
+/* =========================================================
+   RECENT DISEASE VIEW
+========================================================= */
+
+async function recordRecentDiseaseView(
+    diseaseId
+) {
+
+    if (
+        !AppState.user?.id ||
+        !diseaseId
+    ) {
+        return;
+    }
+
+
+    const {
+        error
+    } = await supabaseClient
+        .from("recent_views")
+        .upsert(
+            {
+                user_id:
+                    AppState.user.id,
+
+                disease_id:
+                    diseaseId,
+
+                viewed_at:
+                    new Date().toISOString()
+
+            },
+            {
+                onConflict:
+                    "user_id,disease_id"
+            }
+        );
+
+
+    if (error) {
+
+        console.error(
+            "Rx Master recent disease view could not be saved:",
+            error
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   DISEASE FAVORITE
+========================================================= */
+
+async function toggleDiseaseFavorite(
+    diseaseId
+) {
+
+    if (
+        !AppState.user?.id ||
+        !diseaseId
+    ) {
+        return;
+    }
+
+
+    const favoriteButton =
+        document.querySelector(
+            "[data-reader-favorite]"
+        );
+
+
+    if (!favoriteButton) {
+        return;
+    }
+
+
+    favoriteButton.disabled =
+        true;
+
+
+    try {
+
+        const {
+            data: existingFavorite,
+            error: findError
+        } = await supabaseClient
+            .from("favorites")
+            .select("id")
+            .eq(
+                "user_id",
+                AppState.user.id
+            )
+            .eq(
+                "disease_id",
+                diseaseId
+            )
+            .maybeSingle();
+
+
+        if (findError) {
+            throw findError;
+        }
+
+
+        if (existingFavorite) {
+
+            const {
+                error: deleteError
+            } = await supabaseClient
+                .from("favorites")
+                .delete()
+                .eq(
+                    "id",
+                    existingFavorite.id
+                )
+                .eq(
+                    "user_id",
+                    AppState.user.id
+                );
+
+
+            if (deleteError) {
+                throw deleteError;
+            }
+
+
+            favoriteButton.classList.remove(
+                "is-favorite"
             );
 
-        });
+            favoriteButton.setAttribute(
+                "aria-pressed",
+                "false"
+            );
+
+            favoriteButton.textContent =
+                "☆";
+
+        } else {
+
+            const {
+                error: insertError
+            } = await supabaseClient
+                .from("favorites")
+                .insert({
+                    user_id:
+                        AppState.user.id,
+
+                    disease_id:
+                        diseaseId
+                });
+
+
+            if (insertError) {
+                throw insertError;
+            }
+
+
+            favoriteButton.classList.add(
+                "is-favorite"
+            );
+
+            favoriteButton.setAttribute(
+                "aria-pressed",
+                "true"
+            );
+
+            favoriteButton.textContent =
+                "★";
+
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Disease favorite error:",
+            error
+        );
+
+    } finally {
+
+        favoriteButton.disabled =
+            false;
+
+    }
 
 }
 
