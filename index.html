@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="Rx Master — Premium clinical reference and prescription workspace."
+    >
+
+    <meta
+        name="theme-color"
+        content="#06100d"
+    >
+
+    <title>Rx Master</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+
+    <link
+        rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossorigin
+    >
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+</head>
+
+<body>
+
+<!-- =========================================================
+     AUTH
+========================================================= -->
+
+<section
+    class="auth-screen"
+    id="authScreen"
+>
+
+    <div class="auth-orb orb-one"></div>
+    <div class="auth-orb orb-two"></div>
+
+    <div class="auth-card">
+
+        <div class="brand auth-brand">
+
+            <div class="brand-logo">
+                <span>Rx</span>
+            </div>
+
+            <div>
+                <strong>Rx Master</strong>
+                <small>Clinical Workspace</small>
+            </div>
+
+        </div>
+
+        <div class="auth-heading">
+
+            <span class="eyebrow">
+                SECURE ACCESS
+            </span>
+
+            <h1>
+                Welcome back
+            </h1>
+
+            <p>
+                Sign in to access your clinical workspace.
+            </p>
+
+        </div>
+
+        <div class="role-selector">
+
+            <button
+                type="button"
+                class="role-button active"
+                data-login-role="user"
+            >
+                <strong>User</strong>
+                <span>Clinical workspace</span>
+            </button>
+
+            <button
+                type="button"
+                class="role-button"
+                data-login-role="admin"
+            >
+                <strong>Admin</strong>
+                <span>Management workspace</span>
+            </button>
+
+        </div>
+
+        <small class="role-note">
+            Your actual permissions come from your Rx Master
+            profile in Supabase.
+        </small>
+
+        <form id="loginForm">
+
+            <label class="field">
+
+                <span>Email</span>
+
+                <input
+                    id="loginEmail"
+                    type="email"
+                    autocomplete="email"
+                    placeholder="you@example.com"
+                    required
+                >
+
+            </label>
+
+            <label class="field">
+
+                <span>Password</span>
+
+                <input
+                    id="loginPassword"
+                    type="password"
+                    autocomplete="current-password"
+                    placeholder="Enter your password"
+                    required
+                >
+
+            </label>
+
+            <button
+                class="primary-button full-width"
+                id="loginSubmit"
+                type="submit"
+            >
+                Sign in
+            </button>
+
+        </form>
+
+        <div
+            class="message"
+            id="authMessage"
+        ></div>
+
+        <div class="auth-footer">
+            Rx Master • Secure clinical workspace
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     APPLICATION
+========================================================= -->
+
+<div
+    class="app"
+    id="app"
+    hidden
+>
+
+    <div
+        class="sidebar-overlay"
+        id="sidebarOverlay"
+    ></div>
+
+    <aside
+        class="sidebar"
+        id="sidebar"
+    >
+
+        <div class="sidebar-header">
+
+            <div class="brand">
+
+                <div class="brand-logo">
+                    <span>Rx</span>
+                </div>
+
+                <div>
+                    <strong>Rx Master</strong>
+                    <small>Clinical Workspace</small>
+                </div>
+
+            </div>
+
+            <button
+                class="mobile-close"
+                id="mobileClose"
+                type="button"
+            >
+                ×
+            </button>
+
+        </div>
+
+
+        <nav class="sidebar-nav">
+
+            <div class="nav-label">
+                WORKSPACE
+            </div>
+
+            <button
+                class="nav-item active"
+                data-view="dashboard"
+                type="button"
+            >
+                <span>⌂</span>
+                Dashboard
+            </button>
+
+            <button
+                class="nav-item"
+                data-view="rx-library"
+                type="button"
+            >
+                <span>✚</span>
+                Rx Library
+            </button>
+
+            <button
+                class="nav-item"
+                data-view="prescription"
+                type="button"
+            >
+                <span>✎</span>
+                Prescription Writer
+            </button>
+
+            <button
+                class="nav-item"
+                data-view="drug-library"
+                type="button"
+            >
+                <span>◈</span>
+                Drug Library
+            </button>
+
+            <button
+                class="nav-item"
+                data-view="investigation-library"
+                type="button"
+            >
+                <span>⌬</span>
+                Investigations
+            </button>
+
+
+            <div class="nav-label spaced">
+                PERSONAL
+            </div>
+
+            <button
+                class="nav-item"
+                data-view="favorites"
+                type="button"
+            >
+                <span>☆</span>
+                Favorites
+            </button>
+
+            <button
+                class="nav-item"
+                data-view="recent"
+                type="button"
+            >
+                <span>◷</span>
+                Recently Viewed
+            </button>
+
+
+            <div
+                class="nav-label spaced"
+                id="adminNavLabel"
+                hidden
+            >
+                ADMIN
+            </div>
+
+            <button
+                class="nav-item admin-only"
+                id="adminManagerNav"
+                data-view="admin-manager"
+                type="button"
+                hidden
+            >
+                <span>◆</span>
+                Content Manager
+            </button>
+
+
+            <div class="nav-label spaced">
+                SYSTEM
+            </div>
+
+            <button
+                class="nav-item"
+                data-view="appearance"
+                type="button"
+            >
+                <span>◐</span>
+                Appearance
+            </button>
+
+            <button
+                class="nav-item"
+                id="logoutButton"
+                type="button"
+            >
+                <span>↪</span>
+                Sign out
+            </button>
+
+        </nav>
+
+
+        <div class="sidebar-footer">
+
+            <div class="connection-card">
+
+                <span class="connection-dot"></span>
+
+                <div>
+                    <strong>Rx Master</strong>
+                    <small>Connected workspace</small>
+                </div>
+
+            </div>
+
+            <small>
+                Rx Master • v1.0
+            </small>
+
+        </div>
+
+    </aside>
+
+
+    <main class="main">
+
+        <header class="topbar">
+
+            <div class="topbar-left">
+
+                <button
+                    class="menu-button"
+                    id="menuButton"
+                    type="button"
+                >
+                    ☰
+                </button>
+
+                <div class="breadcrumb">
+                    <span>Workspace</span>
+                    <b>/</b>
+                    <strong id="breadcrumb">
+                        Dashboard
+                    </strong>
+                </div>
+
+            </div>
+
+
+            <div class="topbar-actions">
+
+                <button
+                    class="icon-button"
+                    id="searchButton"
+                    type="button"
+                    title="Search"
+                >
+                    ⌕
+                </button>
+
+                <button
+                    class="icon-button"
+                    id="appearanceButton"
+                    type="button"
+                    title="Toggle appearance"
+                >
+                    ☾
+                </button>
+
+                <button
+                    class="profile-button"
+                    id="profileButton"
+                    type="button"
+                >
+
+                    <span
+                        class="avatar"
+                        id="avatar"
+                    >
+                        U
+                    </span>
+
+                    <span class="profile-text">
+
+                        <strong id="profileName">
+                            User
+                        </strong>
+
+                        <small id="profileRole">
+                            Clinical workspace
+                        </small>
+
+                    </span>
+
+                </button>
+
+            </div>
+
+        </header>
+
+
+        <section
+            class="content"
+            id="content"
+        >
+
+            <!-- DASHBOARD -->
+
+            <section
+                class="view active"
+                id="dashboardView"
+            >
+
+                <div class="hero">
+
+                    <div>
+
+                        <span class="eyebrow">
+                            CLINICAL WORKSPACE
+                        </span>
+
+                        <h1>
+                            Welcome to
+                            <span>Rx Master</span>
+                        </h1>
+
+                        <p>
+                            Your premium clinical reference,
+                            knowledge library and prescription workspace.
+                        </p>
+
+                    </div>
+
+                    <button
+                        class="secondary-button"
+                        id="dashboardSearch"
+                        type="button"
+                    >
+                        ⌕ Search
+                    </button>
+
+                </div>
+
+
+                <div class="stats-grid">
+
+                    <article class="stat-card">
+                        <span>Rx Library</span>
+                        <strong id="statDiseases">—</strong>
+                        <small>published diseases</small>
+                    </article>
+
+                    <article class="stat-card blue">
+                        <span>Drugs</span>
+                        <strong id="statDrugs">—</strong>
+                        <small>medications</small>
+                    </article>
+
+                    <article class="stat-card violet">
+                        <span>Investigations</span>
+                        <strong id="statInvestigations">—</strong>
+                        <small>investigations</small>
+                    </article>
+
+                    <article class="stat-card gold">
+                        <span>Favorites</span>
+                        <strong id="statFavorites">—</strong>
+                        <small>saved items</small>
+                    </article>
+
+                </div>
+
+
+                <div class="dashboard-grid">
+
+                    <section class="panel">
+
+                        <div class="panel-heading">
+                            <div>
+                                <span class="panel-kicker">
+                                    NAVIGATE
+                                </span>
+                                <h2>Quick Access</h2>
+                            </div>
+                        </div>
+
+                        <div class="quick-grid">
+
+                            <button
+                                class="quick-card"
+                                data-view="rx-library"
+                                type="button"
+                            >
+                                <span class="quick-icon green">✚</span>
+                                <span>
+                                    <strong>Rx Library</strong>
+                                    <small>Browse clinical references</small>
+                                </span>
+                                <b>→</b>
+                            </button>
+
+                            <button
+                                class="quick-card"
+                                data-view="prescription"
+                                type="button"
+                            >
+                                <span class="quick-icon blue">✎</span>
+                                <span>
+                                    <strong>Prescription Writer</strong>
+                                    <small>Build a prescription</small>
+                                </span>
+                                <b>→</b>
+                            </button>
+
+                            <button
+                                class="quick-card"
+                                data-view="drug-library"
+                                type="button"
+                            >
+                                <span class="quick-icon violet">◈</span>
+                                <span>
+                                    <strong>Drug Library</strong>
+                                    <small>Explore medications</small>
+                                </span>
+                                <b>→</b>
+                            </button>
+
+                            <button
+                                class="quick-card"
+                                data-view="investigation-library"
+                                type="button"
+                            >
+                                <span class="quick-icon gold">⌬</span>
+                                <span>
+                                    <strong>Investigations</strong>
+                                    <small>Browse investigations</small>
+                                </span>
+                                <b>→</b>
+                            </button>
+
+                        </div>
+
+                    </section>
+
+
+                    <section
+                        class="panel admin-panel"
+                        id="adminDashboardPanel"
+                        hidden
+                    >
+
+                        <span class="admin-badge">
+                            ADMIN WORKSPACE
+                        </span>
+
+                        <h2>
+                            Build your
+                            <span>Rx Library</span>
+                        </h2>
+
+                        <p>
+                            Organize specialties, systems and
+                            diseases from one clinical workspace.
+                        </p>
+
+                        <button
+                            class="primary-button"
+                            id="openManagerButton"
+                            type="button"
+                        >
+                            + Open Content Manager
+                        </button>
+
+                    </section>
+
+                </div>
+
+            </section>
+
+
+            <!-- RX LIBRARY -->
+
+            <section
+                class="view"
+                id="rx-libraryView"
+            >
+
+                <div class="page-heading">
+
+                    <div>
+                        <span class="eyebrow">
+                            RX LIBRARY
+                        </span>
+
+                        <h1>Clinical Library</h1>
+
+                        <p>
+                            Browse your clinical knowledge
+                            hierarchy.
+                        </p>
+                    </div>
+
+                </div>
+
+                <div
+                    class="library-content"
+                    id="libraryContent"
+                ></div>
+
+            </section>
+
+
+            <!-- ADMIN -->
+
+            <section
+                class="view"
+                id="admin-managerView"
+            >
+
+                <div class="page-heading">
+
+                    <div>
+                        <span class="eyebrow">
+                            ADMIN WORKSPACE
+                        </span>
+
+                        <h1>Content Manager</h1>
+
+                        <p>
+                            Build Rx Master through
+                            Specialty → System → Disease.
+                        </p>
+                    </div>
+
+                    <span class="admin-status">
+                        ● Administrator
+                    </span>
+
+                </div>
+
+
+                <section class="panel">
+
+                    <div class="manager-toolbar">
+
+                        <div>
+                            <span class="panel-kicker">
+                                LIBRARY STRUCTURE
+                            </span>
+
+                            <h2>
+                                Clinical Folders
+                            </h2>
+
+                            <p>
+                                Select a folder to manage its children.
+                            </p>
+                        </div>
+
+                        <div class="manager-actions">
+
+                            <button
+                                class="secondary-button"
+                                id="addSystemButton"
+                                type="button"
+                                disabled
+                            >
+                                + Add System
+                            </button>
+
+                            <button
+                                class="primary-button"
+                                id="addSpecialtyButton"
+                                type="button"
+                            >
+                                + Add Specialty
+                            </button>
+
+                        </div>
+
+                    </div>
+
+
+                    <div
+                        id="adminManagerContent"
+                        class="manager-tree"
+                    ></div>
+
+                </section>
+
+            </section>
+
+
+            <!-- PRESCRIPTION -->
+
+            <section
+                class="view"
+                id="prescriptionView"
+            >
+
+                <div class="page-heading">
+
+                    <div>
+                        <span class="eyebrow">
+                            PRESCRIPTION WRITER
+                        </span>
+
+                        <h1>Prescription Workspace</h1>
+
+                        <p>
+                            Create and save prescription drafts.
+                        </p>
+                    </div>
+
+                </div>
+
+
+                <section class="panel prescription-panel">
+
+                    <div class="form-grid">
+
+                        <label class="field">
+                            <span>Prescription title</span>
+                            <input
+                                id="prescriptionTitle"
+                                placeholder="e.g. OPD prescription"
+                            >
+                        </label>
+
+                        <label class="field">
+                            <span>Patient name</span>
+                            <input
+                                id="patientName"
+                                placeholder="Patient name"
+                            >
+                        </label>
+
+                        <label class="field">
+                            <span>Age</span>
+                            <input
+                                id="patientAge"
+                                type="number"
+                                min="0"
+                            >
+                        </label>
+
+                        <label class="field">
+                            <span>Gender</span>
+                            <select id="patientGender">
+                                <option value="">Select</option>
+                                <option value="male">Male</option>
+                                <option value="female">Female</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </label>
+
+                    </div>
+
+                    <label class="field">
+                        <span>Notes</span>
+                        <textarea
+                            id="prescriptionNotes"
+                            rows="8"
+                            placeholder="Prescription notes..."
+                        ></textarea>
+                    </label>
+
+                    <button
+                        class="primary-button"
+                        id="savePrescriptionButton"
+                        type="button"
+                    >
+                        Save Draft
+                    </button>
+
+                    <div
+                        class="message"
+                        id="prescriptionMessage"
+                    ></div>
+
+                </section>
+
+            </section>
+
+
+            <!-- DRUG LIBRARY -->
+
+            <section
+                class="view"
+                id="drug-libraryView"
+            >
+
+                <div class="page-heading">
+                    <div>
+                        <span class="eyebrow">DRUG LIBRARY</span>
+                        <h1>Drug Library</h1>
+                        <p>Browse reusable medications.</p>
+                    </div>
+                </div>
+
+                <div
+                    class="card-grid"
+                    id="drugLibraryContent"
+                ></div>
+
+            </section>
+
+
+            <!-- INVESTIGATIONS -->
+
+            <section
+                class="view"
+                id="investigation-libraryView"
+            >
+
+                <div class="page-heading">
+                    <div>
+                        <span class="eyebrow">
+                            INVESTIGATION LIBRARY
+                        </span>
+                        <h1>Investigations</h1>
+                        <p>Browse reusable investigations.</p>
+                    </div>
+                </div>
+
+                <div
+                    class="card-grid"
+                    id="investigationLibraryContent"
+                ></div>
+
+            </section>
+
+
+            <!-- FAVORITES -->
+
+            <section
+                class="view"
+                id="favoritesView"
+            >
+
+                <div class="page-heading">
+                    <div>
+                        <span class="eyebrow">PERSONAL</span>
+                        <h1>Favorites</h1>
+                        <p>Your saved clinical references.</p>
+                    </div>
+                </div>
+
+                <div
+                    class="card-grid"
+                    id="favoritesContent"
+                ></div>
+
+            </section>
+
+
+            <!-- RECENT -->
+
+            <section
+                class="view"
+                id="recentView"
+            >
+
+                <div class="page-heading">
+                    <div>
+                        <span class="eyebrow">PERSONAL</span>
+                        <h1>Recently Viewed</h1>
+                        <p>Your recent clinical activity.</p>
+                    </div>
+                </div>
+
+                <div
+                    class="card-grid"
+                    id="recentContent"
+                ></div>
+
+            </section>
+
+
+            <!-- APPEARANCE -->
+
+            <section
+                class="view"
+                id="appearanceView"
+            >
+
+                <div class="page-heading">
+                    <div>
+                        <span class="eyebrow">SYSTEM</span>
+                        <h1>Appearance</h1>
+                        <p>Personalize Rx Master.</p>
+                    </div>
+                </div>
+
+                <section class="panel">
+
+                    <div class="panel-heading">
+                        <div>
+                            <span class="panel-kicker">
+                                COLOR SYSTEM
+                            </span>
+                            <h2>Theme</h2>
+                        </div>
+                    </div>
+
+                    <div
+                        class="theme-grid"
+                        id="themeGrid"
+                    ></div>
+
+                </section>
+
+            </section>
+
+        </section>
+
+    </main>
+
+</div>
+
+
+<!-- =========================================================
+     SEARCH
+========================================================= -->
+
+<div
+    class="modal"
+    id="searchModal"
+    aria-hidden="true"
+>
+
+    <div class="modal-card search-card">
+
+        <div class="modal-header">
+
+            <div>
+                <span class="eyebrow">
+                    RX MASTER SEARCH
+                </span>
+
+                <h2>Search</h2>
+            </div>
+
+            <button
+                class="modal-close"
+                data-close-modal="searchModal"
+                type="button"
+            >
+                ×
+            </button>
+
+        </div>
+
+        <input
+            class="search-input"
+            id="searchInput"
+            placeholder="Search diseases, drugs, investigations..."
+            autocomplete="off"
+        >
+
+        <div id="searchResults"></div>
+
+    </div>
+
+</div>
+
+
+<!-- =========================================================
+     APP MODAL
+========================================================= -->
+
+<div
+    class="modal"
+    id="appModal"
+    aria-hidden="true"
+>
+
+    <div
+        class="modal-card"
+        id="appModalCard"
+    ></div>
+
+</div>
+
+
+<script
+    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+></script>
+
+<script src="script.js"></script>
+
+</body>
+</html>
